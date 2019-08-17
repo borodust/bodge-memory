@@ -6,6 +6,7 @@
            define-destructor
            initialize-destructor
            dispose
+           disposedp
            disposable
            disposable-container
            with-disposable

@@ -17,7 +17,7 @@
   ((finalized-p :initform (make-holder))))
 
 
-(definline finalizedp (disposable)
+(definline disposedp (disposable)
   (holder-value (slot-value disposable 'finalized-p)))
 
 
@@ -38,7 +38,7 @@
   (let ((*explicit-dispose-p* t))
     (if (functionp obj)
         (funcall obj)
-        (if (finalizedp obj)
+        (if (disposedp obj)
             (error "Attempt to dispose already finalized object.")
             (loop for finalizer in (destructor-of obj)
                   do (funcall finalizer)
@@ -47,10 +47,17 @@
                      (setf (holder-value (slot-value obj 'finalized-p)) t))))))
 
 
-(definline %ensure-not-null (value)
+(definline %ensure-value-not-null (value)
   (if (null value)
-      (error "Value of slot used in destructor can't be null.")
+      (error "Value used in destructor cannot be null.")
       value))
+
+
+(definline %ensure-slot-not-null (object slot)
+  (let ((value (slot-value object slot)))
+    (if (null value)
+        (error "Value of slot ~A used in destructor cannot be null." slot)
+        value)))
 
 
 (defmacro define-destructor (class-name (&rest slots) &body body)
@@ -62,10 +69,11 @@ collection. `slots` (slot names of the object instance) should be set during ins
 initialization and cannot be null."
   (with-gensyms (this finalized-p-holder)
     `(defmethod destructor-of ((,this ,class-name))
-       (let ,(loop for slot in slots collecting
-                  (if (listp slot)
-                      `(,(first slot) (%ensure-not-null (,(second slot) ,this)))
-                      `(,slot (%ensure-not-null (slot-value ,this ',slot)))))
+       (let ,(loop for slot in slots
+                   collecting (if (listp slot)
+                                  `(,(first slot) (%ensure-value-not-null
+                                                   (,(second slot) ,this)))
+                                  `(,slot (%ensure-slot-not-null ,this ',slot))))
          (let ((,finalized-p-holder (slot-value ,this 'finalized-p)))
            (cons (lambda () (unless (holder-value ,finalized-p-holder)
                               ,@body))
